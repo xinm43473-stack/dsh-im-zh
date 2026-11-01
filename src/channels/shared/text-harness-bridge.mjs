@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createDeferredDeliveryCoordinator, deferredOutcomeText } from './deferred-delivery-coordinator.mjs';
 import { t } from './i18n.mjs';
 import { commandHelpLines } from './command-catalog.mjs';
+import { normalizeCommandText } from './command-alias.mjs';
 import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
@@ -314,6 +315,12 @@ export class TextHarnessBridge {
     const conversationId = cleanText(message?.conversationId);
     const kind = message?.kind === 'group' ? 'group' : 'direct';
     const normalized = { ...message, kind, conversationId };
+    // A Chinese command alias (`/帮助`) is rewritten here, once, so every
+    // command gate and runner downstream reads the canonical spelling. Only the
+    // control text changes: `content` still reaches the model untouched.
+    const controlText = controlTextOf(normalized);
+    const localizedControlText = normalizeCommandText(controlText);
+    if (localizedControlText !== controlText) normalized.controlText = localizedControlText;
     const messageId = cleanText(normalized.messageId);
     const senderId = cleanText(normalized.senderId);
     if (!messageId || !senderId || !conversationId || normalized.senderIsBot === true

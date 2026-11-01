@@ -78,7 +78,8 @@ import {
   qqMenuPage, qqMenuView, sendQqMenu,
 } from './qq-menu.mjs';
 import { withSessionBindingLock } from '../shared/session-binding-lock.mjs';
-import { t } from '../shared/i18n.mjs';
+import { getImHostLanguage, t } from '../shared/i18n.mjs';
+import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 import { isQqMessageAddressed, normalizeQqMentions } from './qq-mention.mjs';
 
 function interactionResolvedText() {
@@ -104,8 +105,27 @@ function pendingMessageId(key, messageId) {
 
 const PENDING_RESTART_NOTICE = '排队中的消息在服务重启时被中断。为避免重复执行，未自动重放；如果该消息尚未处理，请重新发送。';
 
+// The commands whose Chinese spellings fit on one help trailer line. Aliases
+// live in command-alias.mjs; this list only names canonical commands.
+const CHINESE_HINT_COMMANDS = [
+  'new', 'compact', 'clear', 'history', 'workspace', 'sessionlist', 'session',
+  'models', 'reasoning', 'model', 'preset', 'permission', 'stop', 'steer',
+  'batch', 'send', 'cancel', 'status', 'version', 'help', 'm',
+];
+
+// A translated help page must not grow a stray Chinese suffix, so the hint only
+// exists for a zh host. The line is not routed through t(): the spellings are
+// Chinese for every reader by definition and need no dictionaries.
+function chineseCommandHint() {
+  if (getImHostLanguage() !== 'zh') return '';
+  const forms = CHINESE_HINT_COMMANDS
+    .map((command) => localizedCommandForms(command)[0])
+    .filter(Boolean);
+  return forms.length > 0 ? `中文命令同样可用：${forms.join(' ')}` : '';
+}
+
 function helpText() {
-  return [
+  const lines = [
     t('QQ 机器人已连接 DeepSeek Harness。'),
     '',
     t('直接发送文字、图片或文件即可继续当前会话。'),
@@ -140,7 +160,10 @@ function helpText() {
     t('/status  检查连接状态'),
     t('/version  查看插件版本'),
     t('/help  显示本帮助'),
-  ].join('\n');
+  ];
+  const hint = chineseCommandHint();
+  if (hint) lines.push(hint);
+  return lines.join('\n');
 }
 
 function conversationKey(message) {
@@ -569,7 +592,10 @@ export class QqHarnessBridge {
     message = normalizeQqMentions(message, new Set([this.#bot.appId]));
     const key = conversationKey(message);
     const addressed = isQqMessageAddressed(message);
-    const commandText = safeText(message);
+    // Normalize once: every downstream decision below reads commandText, so a
+    // Chinese alias behaves exactly like its English spelling. The model prompt
+    // keeps the user's original wording and is read from the message later.
+    const commandText = normalizeCommandText(safeText(message));
     const menuTextOnly = !hasQqImageAttachments(message) && !hasQqFileAttachments(message)
       && !qqReplyReference(message);
     const explicitMenu = menuTextOnly && isQqMenuCommand(commandText);
@@ -1215,6 +1241,10 @@ export class QqHarnessBridge {
     const promptMessage = preparedMessage
       ?? qqInboundMessage(message, { fetchImpl: this.#fetchImpl });
     const text = promptMessage.content;
+    // #enqueueMessage may replay a queued message or a batch submission, so the
+    // control text is normalized here as well as at accept(). `text` stays the
+    // original wording for the model prompt below.
+    const commandText = normalizeCommandText(text);
     const hasImages = hasInboundImages(promptMessage);
     const hasFiles = hasInboundFiles(promptMessage);
     const hasReply = hasReplyReference(promptMessage);
@@ -1226,7 +1256,7 @@ export class QqHarnessBridge {
         await markMessageSeen();
         return;
       }
-      const command = text.toLowerCase();
+      const command = commandText.toLowerCase();
       if (!hasImages && !hasFiles && command === '/help') {
         await this.#bot.sendText(target, helpText());
         await markMessageSeen();
@@ -1244,7 +1274,7 @@ export class QqHarnessBridge {
         await markMessageSeen();
         return;
       }
-      const clearCommand = await runClearCommand(text, this.#harness, this.#state, key, {
+      const clearCommand = await runClearCommand(commandText, this.#harness, this.#state, key, {
         signal: this.#signal,
         hasImages,
         hasFiles,
@@ -1258,7 +1288,7 @@ export class QqHarnessBridge {
       }
       const workspaceCommand = hasImages || hasFiles
         ? null
-        : await runWorkspaceCommand(text, this.#harness, key);
+        : await runWorkspaceCommand(commandText, this.#harness, key);
       if (workspaceCommand) {
         for (const reply of workspaceCommand.messages ?? [workspaceCommand.message]) {
           await this.#bot.sendText(target, reply);
@@ -1269,7 +1299,7 @@ export class QqHarnessBridge {
       const compactCommand = hasImages || hasFiles
         ? null
         : await runCompactCommand(
-            text,
+            commandText,
             this.#harness,
             this.#state,
             key,

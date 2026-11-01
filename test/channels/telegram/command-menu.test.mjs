@@ -53,7 +53,9 @@ const DOCUMENTED_ALIASES = [
 ];
 test('hiding aliases from the native menu leaves the documented /help lines intact', () => {
   const help = commandHelpLines('telegram');
-  assert.equal(help.length, 30);
+  // 30 usage lines plus the Chinese-alias hint line that the zh interface adds.
+  assert.equal(help.length, 31);
+  assert.match(help.at(-1), /^中文命令同样可用：/u);
   for (const alias of DOCUMENTED_ALIASES) {
     assert.ok(help.some((line) => line.includes(`/${alias}`)), alias);
   }
@@ -74,8 +76,9 @@ test('one new declaration drives both production menu and help consumers', () =>
   const before = structuredClone(catalog);
   assert.deepEqual(telegramCommandMenu(catalog).slice(-2).map((item) => item.command),
     ['fixture', 'fixture_alias']);
-  assert.equal(commandHelpLines('telegram', catalog).at(-1),
-    '/fixture or /fixture_alias [value]  Fixture usage');
+  assert.equal(commandHelpLines('telegram', catalog)
+    .filter((line) => !line.startsWith('中文命令同样可用：')).at(-1),
+  '/fixture or /fixture_alias [value]  Fixture usage');
   assert.deepEqual(catalog, before);
   const result = telegramCommandMenu(catalog);
   result[0].description = 'modified result';
@@ -97,9 +100,13 @@ test('menu filters unsupported, disabled and hidden commands and aliases in stab
   ];
   assert.deepEqual(telegramCommandMenu(catalog).map((item) => item.command),
     ['visible', 'alias', 'private']);
-  assert.deepEqual(commandHelpLines('telegram', catalog),
+  // The fixture commands have no Chinese alias, so their help page carries no
+  // hint; /repair does have one, so the hint lists just that spelling.
+  const withoutHint = (lines) => lines.filter((line) => !line.startsWith('中文命令同样可用：'));
+  assert.deepEqual(withoutHint(commandHelpLines('telegram', catalog)),
     ['/visible  Fixture usage', '/hidden  Fixture usage', '/private  Fixture usage']);
-  assert.deepEqual(commandHelpLines('feishu', catalog), ['/repair  Fixture usage']);
+  assert.deepEqual(withoutHint(commandHelpLines('feishu', catalog)), ['/repair  Fixture usage']);
+  assert.deepEqual(commandHelpLines('feishu', catalog).at(-1), '中文命令同样可用：/修复');
 });
 
 test('real catalog presents only primary names and keeps every alias in help', () => {

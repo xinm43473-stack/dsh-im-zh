@@ -218,8 +218,11 @@ test('all nine channel bridges advertise /session and pass their current convers
     } else {
       assert.match(source, /\/session Session ID 或当前工作区序号  将当前聊天绑定到指定会话/);
     }
-    assert.ok(
-      source.includes(`runWorkspaceCommand(text, this.#harness, ${key})`),
+    // The command text may arrive already normalized (commandText/rawCommandText),
+    // so only the harness and the conversation key are asserted here.
+    assert.match(
+      source,
+      new RegExp(`runWorkspaceCommand\\([A-Za-z_$][\\w$.]*, this\\.#harness, ${key}\\)`),
       `${file} must pass ${key} to the shared command`,
     );
   }

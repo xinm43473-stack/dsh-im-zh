@@ -14,7 +14,8 @@
  * without button callbacks.
  */
 
-import { t } from '../shared/i18n.mjs';
+import { getImHostLanguage, t } from '../shared/i18n.mjs';
+import { localizedCommandForms } from '../shared/command-alias.mjs';
 import { workspaceLabels } from '../shared/workspace-labels.mjs';
 import { normalizeFeishuStepCardPanels } from './step-push-mode.mjs';
 
@@ -580,13 +581,37 @@ export function statusCard(info) {
 
 // ── Help card ─────────────────────────────────────────────────────────────
 
+// Commands this channel implements, in the order the hint lists them. One
+// Chinese spelling per command is enough here; the full alias table lives in
+// ../shared/command-alias.mjs so every channel offers the same spellings.
+const CHINESE_ALIAS_HINT_COMMANDS = Object.freeze([
+  'help', 'new', 'sessionlist', 'session', 'workspacelist', 'workspace',
+  'status', 'version', 'compact', 'clear', 'history', 'archived',
+  'watch', 'watchlist', 'unwatch', 'presetlist', 'preset', 'permission',
+  'models', 'reasoninglist', 'reasoning', 'model',
+  'batch', 'send', 'cancel', 'stop', 'steer', 'repair', 'm',
+]);
+
+/**
+ * One-line Chinese alias hint for the help output, or '' when the interface
+ * language is not Chinese. Translated help pages must stay free of Chinese
+ * text, so the line is assembled at runtime instead of going through t().
+ */
+function chineseCommandAliasHint() {
+  if (getImHostLanguage() !== 'zh') return '';
+  const forms = CHINESE_ALIAS_HINT_COMMANDS
+    .map((command) => localizedCommandForms(command)[0])
+    .filter(Boolean);
+  return forms.length > 0 ? `中文命令同样可用：${forms.join(' ')}` : '';
+}
+
 /**
  * Plain-text command reference advertised when no interactive card is
  * available (e.g. non-interactive clients), so every command stays
  * discoverable without card callbacks.
  */
 export function menuHelpText() {
-  return [
+  const lines = [
     '🤖 助手菜单（回复数字即可，无需记命令）',
     '',
     '📋 会话 / 工作区',
@@ -633,7 +658,10 @@ export function menuHelpText() {
     '/stop  停止当前任务',
     '/steer 指令  给 Agent 补充指令',
     '/repair  补全飞书权限与卡片回调',
-  ].map((line) => t(line)).join('\n');
+  ].map((line) => t(line));
+  const aliasHint = chineseCommandAliasHint();
+  if (aliasHint) lines.push('', aliasHint);
+  return lines.join('\n');
 }
 
 /**
@@ -700,17 +728,20 @@ export function helpCard(extraTextLines = []) {
   const extraText = Array.isArray(extraTextLines) && extraTextLines.length > 0
     ? ('\n' + extraTextLines.join('\n'))
     : '';
+  const commandLines = [
+    t(HELP_TEXT_COMMANDS),
+    t('`/permissionlist` — 按序号列出权限档位'),
+    t('`/permission [序号/ID]` — 查看或切换当前会话权限'),
+    t('/ws、/wsl、/workspaces  工作区命令别名'),
+    t('`/version` — 查看插件版本'),
+    t('/history [数量]  查看最近历史消息（默认 3 条，最多 5 条）'),
+  ];
+  const aliasHint = chineseCommandAliasHint();
+  if (aliasHint) commandLines.push('', aliasHint);
   const elements = [
     { tag: 'div', text: markdown(t(HELP_CARD_FEATURES)) },
     { tag: 'hr' },
-    { tag: 'div', text: markdown([
-      t(HELP_TEXT_COMMANDS),
-      t('`/permissionlist` — 按序号列出权限档位'),
-      t('`/permission [序号/ID]` — 查看或切换当前会话权限'),
-      t('/ws、/wsl、/workspaces  工作区命令别名'),
-      t('`/version` — 查看插件版本'),
-      t('/history [数量]  查看最近历史消息（默认 3 条，最多 5 条）'),
-    ].join('\n') + extraText) },
+    { tag: 'div', text: markdown(commandLines.join('\n') + extraText) },
     { tag: 'hr' },
     { tag: 'div', text: markdown(t(HELP_NUMBER_FALLBACK)) },
     { tag: 'hr' },

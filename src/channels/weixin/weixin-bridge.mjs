@@ -76,7 +76,8 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { t } from '../shared/i18n.mjs';
+import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { getImHostLanguage, t } from '../shared/i18n.mjs';
 
 const INTERACTION_RESOLVED_TEXT = () => t('这个问题已在其他客户端处理，无需再次回答。');
 const DEFAULT_TYPING_KEEPALIVE_MS = 5_000;
@@ -87,7 +88,17 @@ const WEIXIN_REPLY_HISTORY_MAX_PAGES = 3;
 const WEIXIN_REPLY_HISTORY_TIMEOUT_MS = 5_000;
 const WEIXIN_REPLY_HISTORY_MATCH_TOLERANCE_MS = 15_000;
 
-const HELP_TEXT = () => [
+// Append the Chinese command spellings to a help page. Only the Chinese page
+// carries them: a translated page must not grow a stray Chinese suffix. The
+// alias table stays the single source of truth for the spellings.
+function withChineseCommandHint(lines, commands) {
+  if (getImHostLanguage() !== 'zh') return lines;
+  const forms = commands.map((command) => localizedCommandForms(command)[0]).filter(Boolean);
+  if (forms.length === 0) return lines;
+  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+}
+
+const HELP_TEXT = () => withChineseCommandHint([
   t('微信已连接 DeepSeek Harness。'),
   '',
   t('直接发送文字、图片、文件或带文字识别结果的语音即可继续当前会话。'),
@@ -118,7 +129,12 @@ const HELP_TEXT = () => [
   t('/status  检查连接状态'),
   t('/version  查看插件版本'),
   t('/help  显示本帮助'),
-].join('\n');
+], [
+  'new', 'compact', 'clear', 'history', 'workspace', 'workspacelist',
+  'sessionlist', 'session', 'models', 'reasoninglist', 'reasoning', 'model',
+  'presetlist', 'preset', 'stop', 'steer', 'batch', 'send', 'cancel',
+  'status', 'version', 'help',
+]).join('\n');
 
 function conversationKey(userId) {
   return `p2p:${userId}`;
@@ -387,7 +403,10 @@ export class WeixinHarnessBridge {
     const sender = nonEmptyString(message?.from_user_id);
     if (!messageId || !sender || this.#state.hasSeen(messageId)
       || this.#acceptedMessageIds.has(messageId)) return Promise.resolve();
-    const commandText = nonEmptyString(extractWeixinText(message)) ?? '';
+    // Fold the Chinese command aliases once, at the entry point: access checks,
+    // batch routing and every command runner read the canonical English
+    // command. The prompt text handed to the model keeps the user's spelling.
+    const commandText = normalizeCommandText(nonEmptyString(extractWeixinText(message)) ?? '');
     const access = this.#accessPolicy
       ? evaluateInboundAccess(this.#accessPolicy, {
           conversationType: 'direct',
@@ -548,7 +567,7 @@ export class WeixinHarnessBridge {
       return current;
     }
     return this.#busyMessages.dispatch({
-      key, messageId, text: commandText,
+      key, messageId, text: nonEmptyString(extractWeixinText(message)) ?? '', commandText,
       eligible: () => isNativeWeixinText(message) && !extractWeixinReplyReference(message)
         && canAutomaticallySteer(this.#accessPolicy, 'direct', sender),
       harness: this.#harness, state: this.#state, status: this.#status,
@@ -797,6 +816,9 @@ export class WeixinHarnessBridge {
     try {
       const promptMessage = preparedMessage ?? this.#inboundMessage(message);
       const text = promptMessage.content;
+      // Local command routing reads the canonical spelling; the model (further
+      // down) keeps `text` exactly as the user sent it.
+      const commandText = normalizeCommandText(text.trim());
       const hasImages = hasInboundImages(promptMessage);
       const hasFiles = hasInboundFiles(promptMessage);
       const hasReply = hasReplyReference(promptMessage);
@@ -806,7 +828,7 @@ export class WeixinHarnessBridge {
         return;
       }
 
-      const command = text.trim().toLowerCase();
+      const command = commandText.toLowerCase();
       if (!hasImages && !hasFiles && command === '/help') {
         await this.#send(sender, HELP_TEXT(), contextToken, runId);
         await this.#state.markSeen(messageId);
@@ -826,7 +848,7 @@ export class WeixinHarnessBridge {
       }
       const workspaceCommand = hasImages || hasFiles
         ? null
-        : await runWorkspaceCommand(text, this.#harness, key);
+        : await runWorkspaceCommand(commandText, this.#harness, key);
       if (workspaceCommand) {
         for (const reply of workspaceCommand.messages ?? [workspaceCommand.message]) {
           await this.#send(sender, reply, contextToken, runId);
@@ -837,7 +859,7 @@ export class WeixinHarnessBridge {
       const compactCommand = hasImages || hasFiles
         ? null
         : await runCompactCommand(
-            text,
+            commandText,
             this.#harness,
             this.#state,
             key,

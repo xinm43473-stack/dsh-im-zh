@@ -77,10 +77,30 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { t } from '../shared/i18n.mjs';
+import { getImHostLanguage, t } from '../shared/i18n.mjs';
+import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 
 const CARD_INITIAL_TEXT = '已连接 DeepSeek Harness，正在思考…';
 const INTERACTION_RESOLVED_TEXT = '这个问题已在其他客户端处理，无需再次回答。';
+
+// The commands whose Chinese spellings fit on one help trailer line. Aliases
+// live in command-alias.mjs; this list only names canonical commands.
+const CHINESE_HINT_COMMANDS = [
+  'new', 'compact', 'clear', 'history', 'workspace', 'sessionlist', 'session',
+  'models', 'reasoning', 'model', 'preset', 'stop', 'steer', 'batch', 'send',
+  'cancel', 'status', 'version', 'help', 'm',
+];
+
+// A translated help page must not grow a stray Chinese suffix, so the hint only
+// exists for a zh host. The line is not routed through t(): the spellings are
+// Chinese for every reader by definition and need no dictionaries.
+function chineseCommandHint() {
+  if (getImHostLanguage() !== 'zh') return '';
+  const forms = CHINESE_HINT_COMMANDS
+    .map((command) => localizedCommandForms(command)[0])
+    .filter(Boolean);
+  return forms.length > 0 ? `中文命令同样可用：${forms.join(' ')}` : '';
+}
 
 const HELP_TEXT_LINES = [
   '钉钉机器人已连接 DeepSeek Harness。',
@@ -117,7 +137,10 @@ const HELP_TEXT_LINES = [
 ];
 
 function helpText() {
-  return HELP_TEXT_LINES.map((line) => t(line)).join('\n');
+  const lines = HELP_TEXT_LINES.map((line) => t(line));
+  const hint = chineseCommandHint();
+  if (hint) lines.push(hint);
+  return lines.join('\n');
 }
 
 function nonEmptyString(value) {
@@ -627,7 +650,10 @@ export class DingtalkHarnessBridge {
     }
     const pending = this.#pendingInteractions.get(key);
     const promptMessage = this.#inboundMessage(message, key);
-    const commandText = nonEmptyString(promptMessage.content) ?? '';
+    // Normalize once: every downstream decision below reads commandText, so a
+    // Chinese alias behaves exactly like its English spelling. The model prompt
+    // keeps the user's original wording and is read from the message later.
+    const commandText = normalizeCommandText(nonEmptyString(promptMessage.content) ?? '');
     const addressed = String(message.conversationType) !== '2' || message?.isInAtList === true;
     const direct = String(message.conversationType) !== '2';
     if (addressed) {
@@ -1178,7 +1204,7 @@ export class DingtalkHarnessBridge {
     increment(this.#status, 'messagesReceived');
     this.#status.lastMessageAt = new Date().toISOString();
     const result = await runner(
-      nonEmptyString(prompt.content) ?? '',
+      normalizeCommandText(nonEmptyString(prompt.content) ?? ''),
       this.#harness,
       this.#state,
       key,
@@ -1310,6 +1336,10 @@ export class DingtalkHarnessBridge {
 
     const promptMessage = preparedMessage ?? this.#inboundMessage(message, key);
     const text = promptMessage.content;
+    // #enqueueMessage may replay a queued message or a batch submission, so the
+    // control text is normalized here as well as at accept(). `text` stays the
+    // original wording for the model prompt below.
+    const commandText = normalizeCommandText(text);
     const hasImages = hasInboundImages(promptMessage);
     const hasFiles = hasInboundFiles(promptMessage);
     const hasReply = hasReplyReference(promptMessage);
@@ -1324,7 +1354,7 @@ export class DingtalkHarnessBridge {
         return;
       }
 
-      const command = text.toLowerCase();
+      const command = commandText.toLowerCase();
       if (isPlainText && !hasImages && !hasFiles && command === '/help') {
         await this.#send(sessionWebhook, helpText(), this.#atUsersFor(message));
         return;
@@ -1340,7 +1370,7 @@ export class DingtalkHarnessBridge {
         return;
       }
       const workspaceCommand = isPlainText && !hasImages && !hasFiles
-        ? await runWorkspaceCommand(text, this.#harness, key)
+        ? await runWorkspaceCommand(commandText, this.#harness, key)
         : null;
       if (workspaceCommand) {
         for (const reply of workspaceCommand.messages ?? [workspaceCommand.message]) {
@@ -1350,7 +1380,7 @@ export class DingtalkHarnessBridge {
       }
       const compactCommand = isPlainText && !hasImages && !hasFiles
         ? await runCompactCommand(
-            text,
+            commandText,
             this.#harness,
             this.#state,
             key,

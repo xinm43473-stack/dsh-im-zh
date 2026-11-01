@@ -73,14 +73,25 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { t } from '../shared/i18n.mjs';
+import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { getImHostLanguage, t } from '../shared/i18n.mjs';
 import { createWecomStreamSupervisor } from './stream-supervisor.mjs';
 
 const DEFAULT_FILE_UPLOAD_TIMEOUT_MS = 120_000;
 
+// Append the Chinese command spellings to a help page. Only the Chinese page
+// carries them: a translated page must not grow a stray Chinese suffix. The
+// alias table stays the single source of truth for the spellings.
+function withChineseCommandHint(lines, commands) {
+  if (getImHostLanguage() !== 'zh') return lines;
+  const forms = commands.map((command) => localizedCommandForms(command)[0]).filter(Boolean);
+  if (forms.length === 0) return lines;
+  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+}
+
 // Built lazily: t() must run after setImHostLanguage, not at import time.
 function helpText() {
-  return [
+  return withChineseCommandHint([
     t('企业微信机器人已连接 DeepSeek Harness。'),
     '',
     t('直接发送文字、图片或文件即可继续当前会话。'),
@@ -114,7 +125,12 @@ function helpText() {
     t('/status  检查连接状态'),
     t('/version  查看插件版本'),
     t('/help  显示本帮助'),
-  ].join('\n');
+  ], [
+    'm', 'new', 'compact', 'clear', 'permission', 'history', 'workspace',
+    'workspacelist', 'sessionlist', 'session', 'models', 'reasoninglist',
+    'reasoning', 'model', 'presetlist', 'preset', 'stop', 'steer', 'batch',
+    'send', 'cancel', 'status', 'version', 'help',
+  ]).join('\n');
 }
 const MAX_REPLY_BYTES = 18_000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -924,8 +940,12 @@ export class WecomHarnessBridge {
 
     const key = conversationKey(frame);
     const pending = this.#pendingInteractions.get(key);
-    const commandMessage = wecomInboundMessage(frame, this.#client);
-    const commandText = nonEmptyString(commandMessage.content) ?? '';
+    const inbound = wecomInboundMessage(frame, this.#client);
+    // Fold the Chinese command aliases once, at the entry point: the access
+    // policy, batch routing, the menu parser and the command runner all read
+    // the canonical English command. The prompt text keeps the user's spelling.
+    const commandText = normalizeCommandText(nonEmptyString(inbound.content) ?? '');
+    const commandMessage = { ...inbound, content: commandText };
     const conversationType = body.chattype === 'single' ? 'direct' : 'group';
     const access = evaluateInboundAccess(this.#accessPolicy, {
       conversationType,
@@ -1088,7 +1108,7 @@ export class WecomHarnessBridge {
       return current;
     }
     return this.#busyMessages.dispatch({
-      key, messageId, text: commandText,
+      key, messageId, text: inbound.content, commandText,
       eligible: () => isNativeWecomText(frame) && !hasReplyReference(commandMessage)
         && !parseWecomMenu(commandText) && !this.#cardFrames.has(frame)
         && canAutomaticallySteer(this.#accessPolicy, conversationType, senderId),
@@ -1116,7 +1136,9 @@ export class WecomHarnessBridge {
     // soon as the validated callback is accepted, then consume it in order.
     const inboundMessage = wecomInboundMessage(frame, this.#client);
     const directCount = inboundMessage.images.length;
-    const quoteContents = isSharedLocalCommand(inboundMessage.content, {
+    // The quote exemption asks "is this inbound text a local command?", so it
+    // must see the same normalized text the command runner will see.
+    const quoteContents = isSharedLocalCommand(normalizeCommandText(inboundMessage.content), {
       hasImages: hasInboundImages(inboundMessage),
       hasFiles: hasInboundFiles(inboundMessage),
     }) ? [] : imageContents(bodyOf(frame).quote);
@@ -1362,6 +1384,9 @@ export class WecomHarnessBridge {
     }
     const message = preparedMessage ?? wecomInboundMessage(frame, this.#client);
     const text = message.content;
+    // Local command routing reads the canonical spelling; the model (further
+    // down) keeps `text` exactly as the user sent it.
+    const commandText = normalizeCommandText(text.trim());
     const hasImages = hasInboundImages(message);
     const hasFiles = hasInboundFiles(message);
     const hasReply = hasReplyReference(message);
@@ -1379,7 +1404,7 @@ export class WecomHarnessBridge {
         await this.#state.markSeen(messageId);
         return;
       }
-      const command = text.toLowerCase();
+      const command = commandText.toLowerCase();
       if (!hasImages && !hasFiles && command === '/help') {
         await this.#sendImmediate(frame, chatId, helpText());
         await this.#state.markSeen(messageId);
@@ -1399,7 +1424,7 @@ export class WecomHarnessBridge {
       }
       const workspaceCommand = hasImages || hasFiles
         ? null
-        : await runWorkspaceCommand(text, this.#harness, key);
+        : await runWorkspaceCommand(commandText, this.#harness, key);
       if (workspaceCommand) {
         for (const reply of workspaceCommand.messages ?? [workspaceCommand.message]) {
           await this.#sendImmediate(frame, chatId, reply);
@@ -1410,7 +1435,7 @@ export class WecomHarnessBridge {
       const compactCommand = hasImages || hasFiles
         ? null
         : await runCompactCommand(
-            text,
+            commandText,
             this.#harness,
             this.#state,
             key,

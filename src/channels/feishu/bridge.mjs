@@ -93,6 +93,7 @@ import {
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
 import { isSharedLocalCommand } from '../shared/command-permission.mjs';
+import { normalizeCommandText } from '../shared/command-alias.mjs';
 import {
   MENU_PAGE_SIZE,
   PRESET_FOLLOW_DEFAULT_SENTINEL,
@@ -1260,7 +1261,9 @@ export class FeishuHarnessBridge {
     });
 
     const commandMessage = extractInboundMessage(event, this.#client);
-    const commandText = nonEmptyString(commandMessage.content) ?? '';
+    // Command aliases are normalized once here; every command decision below
+    // reads this value, while the model still receives the original text.
+    const commandText = normalizeCommandText(nonEmptyString(commandMessage.content) ?? '');
     const hasImages = hasInboundImages(commandMessage);
     const hasFiles = hasInboundFiles(commandMessage);
     const conversationType = event.message.chat_type === 'p2p' ? 'direct'
@@ -1308,8 +1311,10 @@ export class FeishuHarnessBridge {
       conversationType,
     ));
     const processingReaction = this.#beginReaction(messageId);
+    // Batch input is a command surface too: `/批量` starts a batch and
+    // `/发送`/`取消` end one, so the collected text path sees normalized text.
     const batchText = event.message.message_type === 'text'
-      ? nonEmptyString(extractText(event)) ?? ''
+      ? normalizeCommandText(nonEmptyString(extractText(event)) ?? '')
       : '';
     const batchCommand = event.message.message_type === 'text'
       && isBatchInputCommand(batchText);
@@ -1750,7 +1755,7 @@ export class FeishuHarnessBridge {
     this.#status.lastMessageAt = new Date().toISOString();
     this.#status.messagesReceived += 1;
     let result = await runner(
-      nonEmptyString(message.content) ?? '',
+      normalizeCommandText(nonEmptyString(message.content) ?? ''),
       this.#harness,
       this.#state,
       key,
@@ -1824,16 +1829,19 @@ export class FeishuHarnessBridge {
     // 的用户经语音入口绕过 canExecuteCommands——文字与语音入口行为一致。
     // 仅"命令不允许"给用户提示(与文字路径同文案),其余拒绝原因静默丢弃。
     if (voiceTurnReplyTo) {
+      // A transcript is a command surface like typed text, so it goes through
+      // the same alias normalization before the permission re-check.
+      const transcribedText = normalizeCommandText(text);
       const transcribedAccess = evaluateInboundAccess(this.#accessPolicy, {
         conversationType: event.message.chat_type === 'p2p' ? 'direct'
           : event.message.chat_type === 'group' ? 'group' : null,
         senderIds: senderOpenId(event),
-        text,
+        text: transcribedText,
         hasImages,
         hasFiles,
-        isCommand: isSharedLocalCommand(text, { hasImages, hasFiles })
-          || isFeishuLocalCommand(text, { hasImages, hasFiles })
-          || (!hasImages && !hasFiles && NUMBER_REPLY.test(text) && this.#menus.has(key)),
+        isCommand: isSharedLocalCommand(transcribedText, { hasImages, hasFiles })
+          || isFeishuLocalCommand(transcribedText, { hasImages, hasFiles })
+          || (!hasImages && !hasFiles && NUMBER_REPLY.test(transcribedText) && this.#menus.has(key)),
       });
       if (!transcribedAccess.allowed) {
         this.#logAccessDenied(event.message.chat_type === 'p2p' ? 'direct' : 'group', transcribedAccess.reason);
@@ -1853,7 +1861,7 @@ export class FeishuHarnessBridge {
     // 命令识别对 text 与纯文本 post 一视同仁：post 富文本若仅含单个
     // 文本段落（如复制粘贴的 /new），同样按命令处理；带图片/文件不认。
     // accept() 侧已用 nonEmptyString(content) 判定，两侧保持一致。
-    const rawCommandText = text ? text.trim() : '';
+    const rawCommandText = text ? normalizeCommandText(text.trim()) : '';
     const commandText = !hasImages && !hasFiles && text ? rawCommandText : null;
     if (!text && !hasImages && !hasFiles && !hasReply) {
       // An "@bot" with nothing else carries no instruction to parse, and the
@@ -1872,8 +1880,8 @@ export class FeishuHarnessBridge {
       await this.#handleRepairCommand(event, commandText);
       return;
     }
-    if (isPermissionCommand(text)) {
-      const result = await runPermissionCommand(text, this.#harness, this.#state, key, {
+    if (isPermissionCommand(rawCommandText)) {
+      const result = await runPermissionCommand(rawCommandText, this.#harness, this.#state, key, {
         signal: this.#signal, hasImages, hasFiles,
       });
       for (const reply of result.messages) {
@@ -1995,7 +2003,7 @@ export class FeishuHarnessBridge {
     }
     const workspaceCommand = commandText === null
       ? null
-      : await runWorkspaceCommand(text, this.#harness, key);
+      : await runWorkspaceCommand(rawCommandText, this.#harness, key);
     if (workspaceCommand) {
       for (const reply of workspaceCommand.messages ?? [workspaceCommand.message]) {
         await this.#send(event.message.chat_id, reply, { replyTo: event.message.message_id });

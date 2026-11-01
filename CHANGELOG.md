@@ -6,6 +6,11 @@ This file records the notable changes in each dsh-im release. Its format follows
 
 ## [Unreleased]
 
+### Added / 新增
+
+- 机器人命令支持中文别名：`/帮助`＝`/help`、`/新对话`＝`/new`、`/状态`＝`/status`、`/停止`＝`/stop`、`/模型 2`＝`/model 2` 等，覆盖共享文字桥、飞书、企业微信、微信、企业微信应用、QQ 和钉钉；参数与 `@机器人` 后缀照常生效，只匹配完整命令词，`/帮助我` 这类普通文本不会被当作命令。中文界面下 `/help` 回执会附带一行可用中文命令；部分平台的原生菜单仍只注册英文命令名。
+  Bot commands accept Chinese aliases (`/帮助` = `/help`, `/新对话` = `/new`, `/状态` = `/status`, `/停止` = `/stop`, `/模型 2` = `/model 2`, and more) across the shared text bridge, Feishu, WeCom, Weixin, WeCom app, QQ, and DingTalk. Arguments and the `@bot` suffix keep working, matching is on the complete command word only, and ordinary text such as `/帮助我` is never treated as a command. The `/help` reply lists the available Chinese commands in a Chinese interface; some platform-native menus still register English names only.
+
 ## [5.9.1] - 2026-11-01
 
 ### Fixed / 修复

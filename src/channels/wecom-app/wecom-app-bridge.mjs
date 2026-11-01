@@ -64,14 +64,25 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { t } from '../shared/i18n.mjs';
+import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { getImHostLanguage, t } from '../shared/i18n.mjs';
 import { WECOM_APP_TEXT_MAX_BYTES, splitUtf8ByBytes } from './wecom-app-api.mjs';
 
 const INTERACTION_RESOLVED_TEXT = () => t('这个问题已在其他客户端处理，无需再次回答。');
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const UNSUPPORTED_INBOUND_TEXT = () => t('企业微信应用目前支持文字和图片消息。');
 
-const HELP_TEXT = () => [
+// Append the Chinese command spellings to a help page. Only the Chinese page
+// carries them: a translated page must not grow a stray Chinese suffix. The
+// alias table stays the single source of truth for the spellings.
+function withChineseCommandHint(lines, commands) {
+  if (getImHostLanguage() !== 'zh') return lines;
+  const forms = commands.map((command) => localizedCommandForms(command)[0]).filter(Boolean);
+  if (forms.length === 0) return lines;
+  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+}
+
+const HELP_TEXT = () => withChineseCommandHint([
   t('企业微信应用已连接 DeepSeek Harness，可在微信中直接使用。'),
   '',
   t('直接发送文字或图片即可继续当前会话。'),
@@ -102,7 +113,12 @@ const HELP_TEXT = () => [
   t('/status  检查连接状态'),
   t('/version  查看插件版本'),
   t('/help  显示本帮助'),
-].join('\n');
+], [
+  'new', 'compact', 'clear', 'history', 'workspace', 'workspacelist',
+  'sessionlist', 'session', 'models', 'reasoninglist', 'reasoning', 'model',
+  'presetlist', 'preset', 'stop', 'steer', 'batch', 'send', 'cancel',
+  'status', 'version', 'help',
+]).join('\n');
 
 const WELCOME_TEXT = () => t('企业微信应用已连接 DeepSeek Harness。直接发送文字或图片即可开始，发送 /help 查看可用命令。');
 
@@ -275,7 +291,10 @@ export class WecomAppBridge {
       || this.#state.hasSeen(messageId) || this.#acceptedMessageIds.has(messageId)) {
       return Promise.resolve();
     }
-    const commandText = nonEmptyString(messageText(message)) ?? '';
+    // Fold the Chinese command aliases once, at the entry point: access checks,
+    // batch routing and every command runner read the canonical English
+    // command. The prompt text handed to the model keeps the user's spelling.
+    const commandText = normalizeCommandText(nonEmptyString(messageText(message)) ?? '');
     const hasImages = hasImageItems(message);
     const access = evaluateInboundAccess(this.#accessPolicy, {
       conversationType: 'direct',
@@ -391,7 +410,7 @@ export class WecomAppBridge {
       return current;
     }
     return this.#busyMessages.dispatch({
-      key, messageId, text: commandText,
+      key, messageId, text: nonEmptyString(messageText(message)) ?? '', commandText,
       eligible: () => message.msgtype === 'text' && !hasImages
         && !hasReplyReference(wecomAppInboundMessage(message, this.#api))
         && canAutomaticallySteer(this.#accessPolicy, 'direct', sender),
@@ -568,6 +587,9 @@ export class WecomAppBridge {
     try {
       const promptMessage = preparedMessage ?? wecomAppInboundMessage(message, this.#api);
       const text = promptMessage.content;
+      // Local command routing reads the canonical spelling; the model (further
+      // down) keeps `text` exactly as the user sent it.
+      const commandText = normalizeCommandText(text.trim());
       const hasImages = hasInboundImages(promptMessage);
       const hasFiles = hasInboundFiles(promptMessage);
       const hasReply = hasReplyReference(promptMessage);
@@ -576,7 +598,7 @@ export class WecomAppBridge {
         await this.#state.markSeen(messageId);
         return;
       }
-      const command = text.trim().toLowerCase();
+      const command = commandText.toLowerCase();
       if (!hasImages && !hasFiles && command === '/help') {
         await this.#send(sender, HELP_TEXT());
         await this.#state.markSeen(messageId);
@@ -596,7 +618,7 @@ export class WecomAppBridge {
       }
       const workspaceCommand = hasImages || hasFiles
         ? null
-        : await runWorkspaceCommand(text, this.#harness, key);
+        : await runWorkspaceCommand(commandText, this.#harness, key);
       if (workspaceCommand) {
         for (const reply of workspaceCommand.messages ?? [workspaceCommand.message]) {
           await this.#send(sender, reply);
@@ -606,7 +628,7 @@ export class WecomAppBridge {
       }
       const compactCommand = hasImages || hasFiles
         ? null
-        : await runCompactCommand(text, this.#harness, this.#state, key, { signal: this.#signal });
+        : await runCompactCommand(commandText, this.#harness, this.#state, key, { signal: this.#signal });
       if (compactCommand) {
         await this.#send(sender, compactCommand.message);
         await this.#state.markSeen(messageId);
