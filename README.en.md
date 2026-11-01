@@ -200,6 +200,23 @@ npx -y github:xmanrui/dsh-im install
 
 A GitHub-source installation fetches and builds a Git dependency directly. With pnpm 10 or newer, the profile may first need an `allowBuilds` entry in `pnpm-workspace.yaml`. Most users should prefer the stable npm release.
 
+### Chinese-command build from the branch repo
+
+The Chinese command aliases (`/帮助`, `/新对话`, …) currently ship only from the branch repo `xinm43473-stack/dsh-im-zh`, not from the npm release. In the DSH Desktop built-in terminal (PowerShell):
+
+```powershell
+cd $env:USERPROFILE\.dsh\profiles\desktop
+npm install "github:xinm43473-stack/dsh-im-zh#dsh-im-zh" --save-exact
+```
+
+What these two lines do:
+
+1. `cd $env:USERPROFILE\.dsh\profiles\desktop` enters the DSH Desktop profile directory, where plugin dependencies live under `node_modules`.
+2. `npm install "github:xinm43473-stack/dsh-im-zh#dsh-im-zh"` installs the `dsh-im-zh` branch straight from GitHub as the `@xmanrui/dsh-im` dependency, replacing the npm release; the repo ships the prebuilt `lib/index.js`, so no build step is needed.
+3. `--save-exact` pins the resolved version in the profile `package.json` instead of a `^` range.
+
+Restart DSH Desktop completely (including the tray icon) afterwards. To return to the npm release, run `dsh plugin --profile desktop add -w @xmanrui/dsh-im`.
+
 After installation, follow the built-in instructions on each channel page to scan a QR code or enter credentials. Secrets and Tokens are sent only to the local Harness Host and stored through its protected credential provider; status responses and bot lists never return them.
 
 If this machine must use a forward proxy to reach Feishu, set `HTTPS_PROXY` to a full HTTP proxy URL before starting `dsh web` (for example, `http://proxy:8080`; lowercase `https_proxy` is also supported, with `HTTP_PROXY` accepted as a fallback), then restart the Host after changing it. Feishu registration and credential verification reuse the SDK's proxy-aware HTTP client, while the message WebSocket explicitly uses that proxy; the WebSocket path does not currently read `ALL_PROXY` or `NO_PROXY`.
