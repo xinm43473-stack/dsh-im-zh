@@ -66,10 +66,12 @@ async function eventually(predicate, timeoutMs = 1_000) {
 test('Enterprise WeChat app accepts Chinese command aliases exactly like English ones', async () => {
   const fixture = await bridgeFor();
   try {
+    const enHelpStart = fixture.sent.length;
     await fixture.bridge.accept(textMessage('help-en', '/help'));
-    const englishHelp = fixture.sent.at(-1).content;
+    const englishHelp = fixture.sent.slice(enHelpStart).map((item) => item.content).join('');
+    const zhHelpStart = fixture.sent.length;
     await fixture.bridge.accept(textMessage('help-zh', '/帮助'));
-    const chineseHelp = fixture.sent.at(-1).content;
+    const chineseHelp = fixture.sent.slice(zhHelpStart).map((item) => item.content).join('');
     assert.equal(chineseHelp, englishHelp);
     assert.match(chineseHelp, /\/help/u);
     assert.match(chineseHelp, /中文命令同样可用：/u);
@@ -124,14 +126,18 @@ test('Enterprise WeChat app help mentions Chinese commands only for the zh inter
   const fixture = await bridgeFor();
   try {
     setImHostLanguage('zh');
+    const zhStart = fixture.sent.length;
     await fixture.bridge.accept(textMessage('help-zh-language', '/help'));
-    assert.match(fixture.sent.at(-1).content, /中文命令同样可用：/u);
-    assert.match(fixture.sent.at(-1).content, /\/帮助/u);
+    const zhHelp = fixture.sent.slice(zhStart).map((item) => item.content).join('');
+    assert.match(zhHelp, /中文命令同样可用：/u);
+    assert.match(zhHelp, /\/帮助/u);
 
     setImHostLanguage('en');
+    const enStart = fixture.sent.length;
     await fixture.bridge.accept(textMessage('help-en-language', '/help'));
-    assert.doesNotMatch(fixture.sent.at(-1).content, /中文命令同样可用/u);
-    assert.doesNotMatch(fixture.sent.at(-1).content, /\/帮助/u);
+    const enHelp = fixture.sent.slice(enStart).map((item) => item.content).join('');
+    assert.doesNotMatch(enHelp, /中文命令同样可用/u);
+    assert.doesNotMatch(enHelp, /\/帮助/u);
   } finally {
     setImHostLanguage(previous);
     await fixture.close();

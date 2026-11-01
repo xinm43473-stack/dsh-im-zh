@@ -105,7 +105,7 @@ test('menu filters unsupported, disabled and hidden commands and aliases in stab
   const withoutHint = (lines) => lines.filter((line) => !line.startsWith('中文命令同样可用：'));
   assert.deepEqual(withoutHint(commandHelpLines('telegram', catalog)),
     ['/visible  Fixture usage', '/hidden  Fixture usage', '/private  Fixture usage']);
-  assert.deepEqual(withoutHint(commandHelpLines('feishu', catalog)), ['/repair  Fixture usage']);
+  assert.deepEqual(withoutHint(commandHelpLines('feishu', catalog)), ['/repair（/修复）  Fixture usage']);
   assert.deepEqual(commandHelpLines('feishu', catalog).at(-1), '中文命令同样可用：/修复');
 });
 

@@ -73,7 +73,7 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 import { getImHostLanguage, t } from '../shared/i18n.mjs';
 import { createWecomStreamSupervisor } from './stream-supervisor.mjs';
 
@@ -84,9 +84,10 @@ const DEFAULT_FILE_UPLOAD_TIMEOUT_MS = 120_000;
 // alias table stays the single source of truth for the spellings.
 function withChineseCommandHint(lines, commands) {
   if (getImHostLanguage() !== 'zh') return lines;
+  const annotated = annotateChineseCommandLines(lines, commands);
   const forms = commands.map((command) => localizedCommandForms(command)[0]).filter(Boolean);
-  if (forms.length === 0) return lines;
-  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+  if (forms.length === 0) return annotated;
+  return [...annotated, `中文命令同样可用：${forms.join(' ')}`];
 }
 
 // Built lazily: t() must run after setImHostLanguage, not at import time.
@@ -126,8 +127,8 @@ function helpText() {
     t('/version  查看插件版本'),
     t('/help  显示本帮助'),
   ], [
-    'm', 'new', 'compact', 'clear', 'permission', 'history', 'workspace',
-    'workspacelist', 'sessionlist', 'session', 'models', 'reasoninglist',
+    'm', 'new', 'compact', 'clear', 'permission', 'permissionlist', 'history',
+    'workspace', 'workspacelist', 'sessionlist', 'session', 'models', 'reasoninglist',
     'reasoning', 'model', 'presetlist', 'preset', 'stop', 'steer', 'batch',
     'send', 'cancel', 'status', 'version', 'help',
   ]).join('\n');

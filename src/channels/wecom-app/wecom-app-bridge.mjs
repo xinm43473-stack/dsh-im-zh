@@ -64,7 +64,7 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 import { getImHostLanguage, t } from '../shared/i18n.mjs';
 import { WECOM_APP_TEXT_MAX_BYTES, splitUtf8ByBytes } from './wecom-app-api.mjs';
 
@@ -77,9 +77,10 @@ const UNSUPPORTED_INBOUND_TEXT = () => t('企业微信应用目前支持文字�
 // alias table stays the single source of truth for the spellings.
 function withChineseCommandHint(lines, commands) {
   if (getImHostLanguage() !== 'zh') return lines;
+  const annotated = annotateChineseCommandLines(lines, commands);
   const forms = commands.map((command) => localizedCommandForms(command)[0]).filter(Boolean);
-  if (forms.length === 0) return lines;
-  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+  if (forms.length === 0) return annotated;
+  return [...annotated, `中文命令同样可用：${forms.join(' ')}`];
 }
 
 const HELP_TEXT = () => withChineseCommandHint([

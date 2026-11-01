@@ -624,7 +624,7 @@ test('Enterprise WeChat queries and switches permissions locally for its bound S
   const replies = transport.streamed.map(item => item.content).join('\n');
   assert.match(replies, /当前会话权限：workspace-write/);
   assert.match(replies, /当前会话权限已切换为：workspace-write/);
-  assert.match(replies, /\/permissionlist  按序号列出权限档位/);
+  assert.match(replies, /\/permissionlist（\/权限列表）\s+按序号列出权限档位/);
 });
 
 test('Enterprise WeChat permission commands enforce privileged access before reading or writing', async () => {

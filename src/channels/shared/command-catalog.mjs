@@ -1,5 +1,5 @@
 import { getImHostLanguage, t } from './i18n.mjs';
-import { localizedCommandForms } from './command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms } from './command-alias.mjs';
 
 const TEXT_CHANNELS = Object.freeze(['telegram', 'slack', 'discord', 'whatsapp', 'matrix']);
 
@@ -129,12 +129,14 @@ export function commandHelpLines(channel, catalog = SHARED_COMMAND_CATALOG) {
   const lines = items.flatMap((item) => item.help.map((line) => t(line)));
   // The Chinese spellings are shown to a Chinese reader only: they teach a
   // command that only Chinese input can use, and a translated help page must
-  // not grow a stray Chinese suffix. One trailer line keeps the page readable,
-  // and every alias stays accepted even when only its first spelling is listed.
+  // not grow a stray Chinese suffix. Every command's first usage line carries
+  // its Chinese spelling in parentheses, and one trailer line lists them all
+  // so a long page still has a single discoverable summary.
   if (getImHostLanguage() !== 'zh') return lines;
+  const annotated = annotateChineseCommandLines(lines, items.map((item) => item.name));
   const forms = items
     .map((item) => localizedCommandForms(item.name)[0])
     .filter(Boolean);
-  if (forms.length === 0) return lines;
-  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+  if (forms.length === 0) return annotated;
+  return [...annotated, `中文命令同样可用：${forms.join(' ')}`];
 }

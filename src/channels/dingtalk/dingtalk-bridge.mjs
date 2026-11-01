@@ -78,7 +78,7 @@ import {
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
 import { getImHostLanguage, t } from '../shared/i18n.mjs';
-import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 
 const CARD_INITIAL_TEXT = '已连接 DeepSeek Harness，正在思考…';
 const INTERACTION_RESOLVED_TEXT = '这个问题已在其他客户端处理，无需再次回答。';
@@ -138,9 +138,12 @@ const HELP_TEXT_LINES = [
 
 function helpText() {
   const lines = HELP_TEXT_LINES.map((line) => t(line));
+  const annotated = getImHostLanguage() === 'zh'
+    ? annotateChineseCommandLines(lines, CHINESE_HINT_COMMANDS)
+    : lines;
   const hint = chineseCommandHint();
-  if (hint) lines.push(hint);
-  return lines.join('\n');
+  if (hint) annotated.push(hint);
+  return annotated.join('\n');
 }
 
 function nonEmptyString(value) {

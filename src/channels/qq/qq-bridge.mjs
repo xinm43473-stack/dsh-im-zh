@@ -79,7 +79,7 @@ import {
 } from './qq-menu.mjs';
 import { withSessionBindingLock } from '../shared/session-binding-lock.mjs';
 import { getImHostLanguage, t } from '../shared/i18n.mjs';
-import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 import { isQqMessageAddressed, normalizeQqMentions } from './qq-mention.mjs';
 
 function interactionResolvedText() {
@@ -109,7 +109,8 @@ const PENDING_RESTART_NOTICE = '排队中的消息在服务重启时被中断。
 // live in command-alias.mjs; this list only names canonical commands.
 const CHINESE_HINT_COMMANDS = [
   'new', 'compact', 'clear', 'history', 'workspace', 'sessionlist', 'session',
-  'models', 'reasoning', 'model', 'preset', 'permission', 'stop', 'steer',
+  'models', 'reasoning', 'model', 'preset', 'permission', 'permissionlist',
+  'stop', 'steer',
   'batch', 'send', 'cancel', 'status', 'version', 'help', 'm',
 ];
 
@@ -161,9 +162,12 @@ function helpText() {
     t('/version  查看插件版本'),
     t('/help  显示本帮助'),
   ];
+  const annotated = getImHostLanguage() === 'zh'
+    ? annotateChineseCommandLines(lines, CHINESE_HINT_COMMANDS)
+    : lines;
   const hint = chineseCommandHint();
-  if (hint) lines.push(hint);
-  return lines.join('\n');
+  if (hint) annotated.push(hint);
+  return annotated.join('\n');
 }
 
 function conversationKey(message) {

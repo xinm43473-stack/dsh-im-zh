@@ -449,7 +449,7 @@ test('Feishu lists models and presets without prompting and advertises fast comm
   ]) {
     assert.equal(help.includes(command), true, command);
   }
-  assert.match(help, /\/model .*\[推理等级ID\]/);
+  assert.match(help, /\/model.*\[推理等级ID\]/);
   assert.match(help, /\/preset id:<ID>/);
 });
 

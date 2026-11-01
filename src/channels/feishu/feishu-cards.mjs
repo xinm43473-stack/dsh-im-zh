@@ -15,7 +15,7 @@
  */
 
 import { getImHostLanguage, t } from '../shared/i18n.mjs';
-import { localizedCommandForms } from '../shared/command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms } from '../shared/command-alias.mjs';
 import { workspaceLabels } from '../shared/workspace-labels.mjs';
 import { normalizeFeishuStepCardPanels } from './step-push-mode.mjs';
 
@@ -588,7 +588,7 @@ const CHINESE_ALIAS_HINT_COMMANDS = Object.freeze([
   'help', 'new', 'sessionlist', 'session', 'workspacelist', 'workspace',
   'status', 'version', 'compact', 'clear', 'history', 'archived',
   'watch', 'watchlist', 'unwatch', 'presetlist', 'preset', 'permission',
-  'models', 'reasoninglist', 'reasoning', 'model',
+  'permissionlist', 'models', 'reasoninglist', 'reasoning', 'model',
   'batch', 'send', 'cancel', 'stop', 'steer', 'repair', 'm',
 ]);
 
@@ -659,9 +659,12 @@ export function menuHelpText() {
     '/steer 指令  给 Agent 补充指令',
     '/repair  补全飞书权限与卡片回调',
   ].map((line) => t(line));
+  const annotated = getImHostLanguage() === 'zh'
+    ? annotateChineseCommandLines(lines, CHINESE_ALIAS_HINT_COMMANDS)
+    : lines;
   const aliasHint = chineseCommandAliasHint();
-  if (aliasHint) lines.push('', aliasHint);
-  return lines.join('\n');
+  if (aliasHint) annotated.push('', aliasHint);
+  return annotated.join('\n');
 }
 
 /**

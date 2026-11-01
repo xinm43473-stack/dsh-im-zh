@@ -52,6 +52,7 @@ const ALIAS_GROUPS = Object.freeze({
   watchlist: Object.freeze(['订阅列表']),
   archived: Object.freeze(['归档', '已归档']),
   permission: Object.freeze(['权限']),
+  permissionlist: Object.freeze(['权限列表', '列出权限']),
 });
 
 const ALIASES_BY_COMMAND = new Map(
@@ -138,4 +139,50 @@ export function findDuplicateLocalizedAliases() {
     }
   }
   return [...duplicates];
+}
+
+// A command token ends at whitespace, a list separator, or a CJK conjunctor:
+// `/workspace 或 /ws` is the `/workspace` line, while `/workspacelist、/wsl`
+// is a different command and must not be annotated as `workspace`.
+const COMMAND_TOKEN_END = /[\s\u3000、或[(（]/u;
+
+/**
+ * Put the Chinese spelling of each command next to its first help line:
+ * `/new  开启一个全新会话` becomes `/new（/新对话）  开启一个全新会话`.
+ *
+ * Only the first line of every command is touched, so the multi-line entries
+ * (`/conv`, `/workspace`, …) stay readable, and commands without a Chinese
+ * alias pass through untouched. The caller decides whether the page is
+ * Chinese; this function only edits strings.
+ *
+ * @param {readonly string[]} lines help lines, already translated
+ * @param {readonly string[]} commands canonical names in help order
+ * @returns {string[]}
+ */
+export function annotateChineseCommandLines(lines, commands) {
+  const pending = new Map();
+  for (const command of commands) {
+    const form = localizedCommandForms(command)[0];
+    if (form) pending.set(command, form);
+  }
+  if (pending.size === 0) return [...lines];
+  const out = [];
+  for (const line of lines) {
+    if (pending.size > 0 && typeof line === 'string') {
+      let annotated = false;
+      for (const [command, form] of pending) {
+        const prefix = `/${command}`;
+        if (!line.startsWith(prefix)) continue;
+        const next = line[prefix.length];
+        if (next !== undefined && !COMMAND_TOKEN_END.test(next)) continue;
+        pending.delete(command);
+        out.push(`${prefix}（${form}）${line.slice(prefix.length)}`);
+        annotated = true;
+        break;
+      }
+      if (annotated) continue;
+    }
+    out.push(line);
+  }
+  return out;
 }

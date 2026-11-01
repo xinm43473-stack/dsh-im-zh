@@ -132,9 +132,10 @@ test('the /help command replies through the API without touching Harness', async
     status: { messagesReceived: 0, messagesReplied: 0 },
   });
 
+  const helpStart = sends.length;
   await bridge.accept(textMessage('m-3', '/help'));
-  await eventually(() => sends.length > 0);
-  assert.match(sends.at(-1), /\/help/);
+  await eventually(() => sends.length > helpStart);
+  assert.match(sends.slice(helpStart).join(''), /\/help/);
   assert.equal(askCalls, 0);
   await bridge.close();
   await rm(root, { recursive: true, force: true });

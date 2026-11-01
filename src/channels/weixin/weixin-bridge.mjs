@@ -76,7 +76,7 @@ import {
   COMMAND_PERMISSION_DENIED_MESSAGE,
   evaluateInboundAccess,
 } from '../shared/inbound-access.mjs';
-import { localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
+import { annotateChineseCommandLines, localizedCommandForms, normalizeCommandText } from '../shared/command-alias.mjs';
 import { getImHostLanguage, t } from '../shared/i18n.mjs';
 
 const INTERACTION_RESOLVED_TEXT = () => t('这个问题已在其他客户端处理，无需再次回答。');
@@ -93,9 +93,10 @@ const WEIXIN_REPLY_HISTORY_MATCH_TOLERANCE_MS = 15_000;
 // alias table stays the single source of truth for the spellings.
 function withChineseCommandHint(lines, commands) {
   if (getImHostLanguage() !== 'zh') return lines;
+  const annotated = annotateChineseCommandLines(lines, commands);
   const forms = commands.map((command) => localizedCommandForms(command)[0]).filter(Boolean);
-  if (forms.length === 0) return lines;
-  return [...lines, `中文命令同样可用：${forms.join(' ')}`];
+  if (forms.length === 0) return annotated;
+  return [...annotated, `中文命令同样可用：${forms.join(' ')}`];
 }
 
 const HELP_TEXT = () => withChineseCommandHint([
